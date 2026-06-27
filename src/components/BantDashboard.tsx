@@ -66,7 +66,7 @@ export default function BantDashboard({ bantState, onRestart, isLoading }: BantD
           </div>
           <div>
             <h1 className="text-xl font-bold font-sans tracking-tight text-text-primary flex items-center gap-2">
-              Qualifyr
+              🤖 Qualifyr
               <span className="text-[10px] bg-bg-elevated text-accent font-mono px-2 py-0.5 rounded-full font-medium">BETA</span>
             </h1>
             <p className="text-xs text-text-secondary font-sans">B2B Software Advisory Assistant</p>
