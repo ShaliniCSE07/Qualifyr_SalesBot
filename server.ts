@@ -280,6 +280,7 @@ tool name or pricing from memory alone.
     let step3Output = "";
     let isGrounded = true;
     let fallbackNotice = "";
+    let groundedUrls: { title: string; uri: string }[] = [];
 
     try {
       const step3Response = await ai.models.generateContent({
@@ -294,6 +295,37 @@ tool name or pricing from memory alone.
       if (!step3Output) {
         throw new Error("Google Grounding returned an empty response.");
       }
+
+      // Extract real source URLs from Gemini's grounding metadata
+      try {
+        const candidate = (step3Response as any)?.candidates?.[0];
+        const groundingMeta = candidate?.groundingMetadata;
+        if (groundingMeta?.groundingChunks) {
+          groundedUrls = groundingMeta.groundingChunks
+            .filter((chunk: any) => chunk?.web?.uri)
+            .map((chunk: any) => ({
+              title: chunk.web.title || "",
+              uri: chunk.web.uri,
+            }));
+          console.log("Extracted grounded URLs from metadata:", groundedUrls.map(u => u.uri));
+        }
+        // Also check searchEntryPoint or groundingSupports for URLs
+        if (groundedUrls.length === 0 && groundingMeta?.groundingSupports) {
+          for (const support of groundingMeta.groundingSupports) {
+            if (support?.groundingChunkIndices && groundingMeta?.groundingChunks) {
+              for (const idx of support.groundingChunkIndices) {
+                const chunk = groundingMeta.groundingChunks[idx];
+                if (chunk?.web?.uri) {
+                  groundedUrls.push({ title: chunk.web.title || "", uri: chunk.web.uri });
+                }
+              }
+            }
+          }
+        }
+      } catch (metaErr) {
+        console.warn("Could not extract grounding metadata URLs:", metaErr);
+      }
+
       console.log("Successfully completed Step 3 Grounded search with live Google Search results.");
     } catch (groundingError: any) {
       console.error("Step 3 Google Grounded Search failed, attempting robust fallback with pre-trained knowledge base. Error detail:", groundingError);
@@ -322,6 +354,11 @@ tool name or pricing from memory alone.
 
     console.log("Initiating Step 4 Reformatting.");
 
+    // Build a reference list of real grounded URLs for the reformat step
+    const groundedUrlRef = groundedUrls.length > 0
+      ? `\n\nIMPORTANT — Use these REAL verified source URLs (from Google Search grounding) for the source_url fields. Match each tool to the most relevant URL:\n${groundedUrls.map((u, i) => `${i + 1}. ${u.title} — ${u.uri}`).join("\n")}\nDo NOT invent or hallucinate URLs. Use ONLY the URLs listed above.`
+      : "";
+
     // STEP 4 Call: Reformat Output
     const reformatPrompt = `
 You will receive raw research notes about software tool recommendations. Reformat this into 
@@ -330,6 +367,7 @@ restructure and tighten the language.
 
 Research notes:
 ${step3Output}
+${groundedUrlRef}
 
 Output strictly in this format:
 
@@ -397,6 +435,24 @@ Also output this machine-readable block at the very end:
       solutions = [];
     }
 
+    // Overwrite source_url with real grounded URLs where possible
+    if (groundedUrls.length > 0 && solutions.length > 0) {
+      for (let i = 0; i < solutions.length; i++) {
+        // Try to find a grounded URL that matches this tool by name
+        const toolName = (solutions[i].name || "").toLowerCase();
+        const matchedUrl = groundedUrls.find(u =>
+          toolName && (u.title.toLowerCase().includes(toolName) || u.uri.toLowerCase().includes(toolName.split(" ")[0]))
+        );
+        if (matchedUrl) {
+          solutions[i].source_url = matchedUrl.uri;
+        } else if (groundedUrls[i]) {
+          // Fallback: assign by position
+          solutions[i].source_url = groundedUrls[i].uri;
+        }
+      }
+      console.log("Overwritten source_urls with real grounded URLs:", solutions.map(s => s.source_url));
+    }
+
     res.json({
       markdown: finalOutput,
       solutions: solutions,
@@ -411,10 +467,18 @@ Also output this machine-readable block at the very end:
 // Vite middleware for development, static path resolution for prod
 const isProduction = process.env.NODE_ENV === "production";
 
+import http from "http";
+const httpServer = http.createServer(app);
+
 if (!isProduction) {
   const { createServer: createViteServer } = await import("vite");
   const vite = await createViteServer({
-    server: { middlewareMode: true },
+    server: {
+      middlewareMode: true,
+      hmr: {
+        server: httpServer, // attach HMR WebSocket to the Express HTTP server
+      },
+    },
     appType: "spa",
   });
   app.use(vite.middlewares);
@@ -432,6 +496,6 @@ app.use((err: any, req: any, res: any, next: any) => {
   res.status(500).json({ error: "Express backend unhandled mistake." });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Qualifyr engine listening on port ${PORT}. Mode: ${isProduction ? "production" : "development"}`);
 });

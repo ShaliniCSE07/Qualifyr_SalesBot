@@ -14,6 +14,14 @@ interface ShortlistDisplayProps {
   category: string;
 }
 
+// Ensures URLs from Gemini always have a protocol so the browser opens them externally
+function ensureAbsoluteUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return '#';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 export default function ShortlistDisplay({ solutions, markdown, isLoading, category }: ShortlistDisplayProps) {
   if (isLoading) {
     return (
@@ -150,7 +158,7 @@ export default function ShortlistDisplay({ solutions, markdown, isLoading, categ
               </span>
               {sol.source_url && (
                 <a
-                  href={sol.source_url}
+                  href={ensureAbsoluteUrl(sol.source_url)}
                   target="_blank"
                   referrerPolicy="no-referrer"
                   rel="noopener noreferrer"
