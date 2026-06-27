@@ -1,0 +1,6 @@
+{
+  "name": "Qualifyr",
+  "description": "Qualifyr is a consultative B2B software advisory platform. It evaluates needs, budget, authority, and timeline, then leverages live Google Search Grounding to match buyers to verified real-world software solutions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
